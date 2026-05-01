@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Curl & Divergence — Interactive Models</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=JetBrains+Mono:wght@300;400;500&display=swap');
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#f7f4ef;--bg2:#eeeae2;--bg3:#e4dfd4;--surface:#fff;
+  --border:#d4cfc4;--border2:#c4bfb4;--text:#1a1714;--muted:#7a7570;
+  --dim:#b4afa4;--ink:#2a2520;
+  --red:#c0392b;--red-bg:#fdf0ee;
+  --blue:#1a5276;--blue-bg:#eaf0f6;
+  --green:#1e6641;--green-bg:#eaf4ee;
+  --amber:#8a5a00;--amber-bg:#fef9ee;
+  --purple:#5b2c8a;--purple-bg:#f4eefa;
+}
+html,body{background:var(--bg);color:var(--text);font-family:'Libre Baskerville',Georgia,serif;min-height:100vh;overflow-x:hidden;}
+
+/* HEADER */
+.hdr{background:var(--ink);color:#f7f4ef;padding:1.25rem 2rem;display:flex;align-items:center;justify-content:space-between;gap:1rem;}
+.hdr-title{font-size:20px;font-weight:400;font-style:italic;}
+.hdr-sub{font-family:'JetBrains Mono',monospace;font-size:10px;color:#a09890;letter-spacing:0.08em;}
+.progress-bar{height:3px;background:var(--bg3);}
+.progress-fill{height:100%;background:var(--ink);transition:width 0.4s ease;width:25%;}
+
+/* SCENE NAV */
+.scene-nav{display:flex;background:var(--bg2);border-bottom:1px solid var(--border);overflow-x:auto;scrollbar-width:none;}
+.scene-nav::-webkit-scrollbar{display:none}
+.snav-btn{padding:0.85rem 1.5rem;font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:0.06em;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;transition:all 0.18s;white-space:nowrap;border:none;background:none;display:flex;flex-direction:column;gap:3px;align-items:flex-start;}
+.snav-btn:hover{color:var(--text);background:var(--bg3);}
+.snav-btn.active{color:var(--ink);border-bottom:2px solid var(--ink);background:var(--bg);}
+.snav-btn .sn{font-size:9px;color:var(--dim);}
+.snav-btn.active .sn{color:var(--muted);}
+
+/* SCENE */
+.scene{display:none;}
+.scene.active{display:flex;flex-direction:column;min-height:calc(100vh - 130px);}
+
+/* TOP: canvas + predict side by side */
+.scene-top{display:grid;grid-template-columns:1fr 360px;gap:0;border-bottom:1px solid var(--border);}
+
+/* CANVAS */
+.canvas-col{padding:1.5rem 1.75rem;background:var(--bg);border-right:1px solid var(--border);}
+.canvas-wrap{position:relative;background:var(--surface);border:1px solid var(--border);border-radius:2px;overflow:hidden;cursor:crosshair;}
+canvas{display:block;}
+.canvas-hint{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--muted);letter-spacing:0.04em;margin-top:0.6rem;}
+.controls-row{display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap;margin-top:0.75rem;}
+.ctrl-group{display:flex;align-items:center;gap:7px;font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--muted);}
+.ctrl-group input[type=range]{width:80px;accent-color:var(--ink);cursor:pointer;}
+.ctrl-val{color:var(--ink);min-width:28px;font-weight:500;font-size:11px;}
+.btn{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:0.05em;padding:5px 12px;border:1px solid var(--border2);background:var(--surface);color:var(--text);cursor:pointer;border-radius:1px;transition:all 0.15s;}
+.btn:hover{background:var(--bg2);border-color:var(--ink);}
+
+/* PREDICT COL */
+.predict-col{padding:1.5rem;background:var(--surface);display:flex;flex-direction:column;gap:1rem;}
+.pred-card{background:var(--amber-bg);border:1px solid #d4a840;border-radius:2px;padding:1.1rem 1.2rem;}
+.pred-label{font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:0.1em;text-transform:uppercase;color:var(--amber);margin-bottom:0.5rem;font-weight:500;}
+.pred-q{font-size:13px;line-height:1.65;color:var(--ink);margin-bottom:0.85rem;}
+.pred-input{width:100%;font-family:'JetBrains Mono',monospace;font-size:11px;padding:7px 10px;border:1px solid #d4a840;background:#fff;border-radius:1px;color:var(--ink);margin-bottom:0.6rem;resize:vertical;min-height:52px;}
+.pred-input:focus{outline:none;border-color:var(--amber);}
+.reveal-btn{font-family:'JetBrains Mono',monospace;font-size:10px;padding:6px 14px;background:var(--amber);color:#fff;border:none;cursor:pointer;border-radius:1px;letter-spacing:0.06em;}
+.reveal-btn:hover{background:#7a4e00;}
+.reveal-ans{margin-top:0.85rem;padding:0.85rem;background:#fff;border:1px solid #d4a840;border-radius:1px;font-size:12px;line-height:1.7;display:none;color:var(--ink);}
+.reveal-ans.show{display:block;}
+
+/* FLUX */
+.flux-card{background:var(--blue-bg);border:1px solid #aac4d8;border-radius:2px;padding:1rem 1.2rem;display:none;}
+.flux-card.visible{display:block;}
+.flux-label{font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:0.1em;text-transform:uppercase;color:var(--blue);margin-bottom:0.4rem;font-weight:500;}
+.flux-num{font-size:22px;font-weight:700;font-family:'JetBrains Mono',monospace;display:block;margin:0.3rem 0 0.2rem;color:var(--ink);}
+.flux-num.pos{color:var(--green);}
+.flux-num.neg{color:var(--red);}
+.flux-sub{font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace;}
+
+/* BOTTOM: eq panel */
+.scene-bottom{padding:1.25rem 1.75rem;background:var(--surface);border-top:1px solid var(--border);display:flex;gap:1.5rem;align-items:flex-start;flex-wrap:wrap;}
+.eq-block{font-family:'JetBrains Mono',monospace;font-size:11.5px;line-height:1.9;color:var(--ink);background:var(--bg);border:1px solid var(--border);padding:0.85rem 1.1rem;border-radius:1px;min-width:220px;flex:1;}
+.eq-label{font-size:9px;letter-spacing:0.1em;text-transform:uppercase;color:var(--muted);margin-bottom:0.4rem;font-weight:500;}
+.eq-result{border-top:1px solid var(--border2);margin-top:0.5rem;padding-top:0.5rem;font-weight:500;}
+.eq-result.red{color:var(--red);}
+.eq-result.blue{color:var(--blue);}
+.eq-result.green{color:var(--green);}
+.eq-result.purple{color:var(--purple);}
+.scene-label{position:absolute;top:10px;left:12px;font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--muted);line-height:1.8;pointer-events:none;}
+</style>
+</head>
+<body>
+
+<div class="hdr">
+  <div>
+    <div class="hdr-sub">Multivariable Calculus · Vector Fields</div>
+    <div class="hdr-title">Curl &amp; Divergence — Interactive Models</div>
+  </div>
+  <div class="hdr-sub" style="text-align:right">click canvas to place paddle wheel<br>drag to draw flux box (scene 3)</div>
+</div>
+<div class="progress-bar"><div class="progress-fill" id="pFill"></div></div>
+
+<div class="scene-nav">
+  <button class="snav-btn active" onclick="goScene(0)"><span class="sn">01</span>Whirlpool</button>
+  <button class="snav-btn" onclick="goScene(1)"><span class="sn">02</span>River Gradient</button>
+  <button class="snav-btn" onclick="goScene(2)"><span class="sn">03</span>Expanding Gas</button>
+  <button class="snav-btn" onclick="goScene(3)"><span class="sn">04</span>Full Picture</button>
+  <button class="snav-btn" onclick="goScene(4)"><span class="sn">05</span>Free Vortex</button>
+</div>
+
+<!-- ══════════════════════ SCENE 0 ══════════════════════ -->
+<div class="scene active" id="s0">
+  <div class="scene-top">
+    <div class="canvas-col">
+      <div class="canvas-wrap" id="w0">
+        <canvas id="c0" width="580" height="360"></canvas>
+        <div class="scene-label" id="lbl0"></div>
+      </div>
+      <div class="canvas-hint">click anywhere on the field to place a paddle wheel</div>
+      <div class="controls-row">
+        <button class="btn" id="pb0" onclick="togglePlay(0)">pause</button>
+        <div class="ctrl-group">speed <input type="range" min="1" max="10" value="5" id="sp0" oninput="setSpd(0,+this.value)"><span class="ctrl-val" id="sv0">5</span></div>
+        <button class="btn" onclick="clearWheels(0)">clear wheels</button>
+      </div>
+    </div>
+    <div class="predict-col">
+      <div class="pred-card">
+        <div class="pred-label">predict first</div>
+        <div class="pred-q">Place a paddle wheel near the center, then far from it. Do you expect it to spin faster near the center or near the edge? Write your prediction before trying it.</div>
+        <textarea class="pred-input" placeholder="your prediction..."></textarea>
+        <button class="reveal-btn" onclick="revealPred(0)">reveal answer →</button>
+        <div class="reveal-ans" id="pa0">It spins at the <strong>same rate everywhere.</strong> The arrows near the edge are longer — the fluid moves faster there — but curl measures the <em>differential rotation across a tiny region</em>, not the speed. Since F = (−y, x) has uniform curl = 2, a paddle wheel spins identically anywhere in the field. Curl is local and constant here.</div>
+      </div>
+    </div>
+  </div>
+  <div class="scene-bottom">
+    <div class="eq-block">
+      <div class="eq-label">field</div>
+      F = (−y, x, 0)
+    </div>
+    <div class="eq-block">
+      <div class="eq-label">curl computation</div>
+      curl F = ∇ × F<br>
+      &nbsp;= (∂Q/∂x − ∂P/∂y) k̂<br>
+      &nbsp;= (∂(x)/∂x − ∂(−y)/∂y) k̂<br>
+      &nbsp;= (1 − (−1)) k̂
+      <div class="eq-result red">= 2 k̂ — constant everywhere</div>
+    </div>
+    <div class="eq-block">
+      <div class="eq-label">divergence</div>
+      div F = ∂(−y)/∂x + ∂(x)/∂y<br>
+      &nbsp;= 0 + 0
+      <div class="eq-result blue">= 0 — no expansion or compression</div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════ SCENE 1 ══════════════════════ -->
+<div class="scene" id="s1">
+  <div class="scene-top">
+    <div class="canvas-col">
+      <div class="canvas-wrap" id="w1">
+        <canvas id="c1" width="580" height="360"></canvas>
+        <div class="scene-label" id="lbl1"></div>
+      </div>
+      <div class="canvas-hint">click to place a paddle wheel — observe spin direction</div>
+      <div class="controls-row">
+        <button class="btn" id="pb1" onclick="togglePlay(1)">pause</button>
+        <div class="ctrl-group">shear <input type="range" min="1" max="10" value="5" id="sp1" oninput="setSpd(1,+this.value)"><span class="ctrl-val" id="sv1">5</span></div>
+        <button class="btn" onclick="clearWheels(1)">clear wheels</button>
+      </div>
+    </div>
+    <div class="predict-col">
+      <div class="pred-card">
+        <div class="pred-label">predict first</div>
+        <div class="pred-q">All arrows point to the right. Nothing is visibly spinning or curving. Does this field have nonzero curl? If so, in which direction does the paddle wheel spin?</div>
+        <textarea class="pred-input" placeholder="zero curl? nonzero? clockwise or counterclockwise?"></textarea>
+        <button class="reveal-btn" onclick="revealPred(1)">reveal answer →</button>
+        <div class="reveal-ans" id="pa1">Yes — <strong>curl ≠ 0.</strong> The arrows at the top (large y) are long; at the bottom (y near 0) they're short. A paddle wheel's top blade is pushed right harder than its bottom — it spins <strong>clockwise</strong>. Curl = −k̂. This is the key counterintuition: <em>curl is not about curved arrows</em>. It's about velocity differences across a local region. ∂P/∂y captures exactly this — how much does the horizontal speed change as you move vertically?</div>
+      </div>
+    </div>
+  </div>
+  <div class="scene-bottom">
+    <div class="eq-block">
+      <div class="eq-label">field</div>
+      F = (y, 0, 0)
+    </div>
+    <div class="eq-block">
+      <div class="eq-label">curl computation</div>
+      curl F = (∂Q/∂x − ∂P/∂y) k̂<br>
+      &nbsp;= (∂(0)/∂x − ∂(y)/∂y) k̂<br>
+      &nbsp;= (0 − 1) k̂
+      <div class="eq-result red">= −k̂ — clockwise, everywhere</div>
+    </div>
+    <div class="eq-block">
+      <div class="eq-label">divergence</div>
+      div F = ∂(y)/∂x + ∂(0)/∂y<br>
+      &nbsp;= 0 + 0
+      <div class="eq-result blue">= 0 — incompressible flow</div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════ SCENE 2 ══════════════════════ -->
+<div class="scene" id="s2">
+  <div class="scene-top">
+    <div class="canvas-col">
+      <div class="canvas-wrap" id="w2" style="cursor:default">
+        <canvas id="c2" width="580" height="360"></canvas>
+        <div class="scene-label" id="lbl2"></div>
+      </div>
+      <div class="canvas-hint">click and drag to draw a measurement box — watch the flux counter on the right</div>
+      <div class="controls-row">
+        <button class="btn" id="pb2" onclick="togglePlay(2)">pause</button>
+        <div class="ctrl-group">rate <input type="range" min="1" max="10" value="5" id="sp2" oninput="setSpd(2,+this.value)"><span class="ctrl-val" id="sv2">5</span></div>
+        <button class="btn" id="sinkBtn" onclick="toggleSink()">switch to sink →</button>
+        <button class="btn" onclick="clearBox()">clear box</button>
+      </div>
+    </div>
+    <div class="predict-col">
+      <div class="pred-card">
+        <div class="pred-label">predict first</div>
+        <div class="pred-q">Draw a small box near the origin. Then draw a large box near the edge. Do you expect the net flux per area to change depending on box size or location?</div>
+        <textarea class="pred-input" placeholder="same everywhere? or changes with location/size?"></textarea>
+        <button class="reveal-btn" onclick="revealPred(2)">reveal answer →</button>
+        <div class="reveal-ans" id="pa2"><strong>Same everywhere.</strong> No matter where you draw the box or how large it is, the net outward flux divided by area always equals div F = 2. That's what divergence means as a local quantity — it's the flux density, not total flux. Try it: small box near center, large box near edge. The counter should always read ~2. Toggle to sink: same magnitude, negative sign.</div>
+      </div>
+      <div class="flux-card visible" id="fc2">
+        <div class="flux-label">measured net flux / area</div>
+        <span class="flux-num" id="fn2">draw a box</span>
+        <div class="flux-sub" id="fs2">click and drag on the canvas</div>
+      </div>
+    </div>
+  </div>
+  <div class="scene-bottom">
+    <div class="eq-block">
+      <div class="eq-label">field (source)</div>
+      F = (x, y, 0)
+    </div>
+    <div class="eq-block">
+      <div class="eq-label">divergence computation</div>
+      div F = ∂P/∂x + ∂Q/∂y + ∂R/∂z<br>
+      &nbsp;= ∂(x)/∂x + ∂(y)/∂y + 0<br>
+      &nbsp;= 1 + 1
+      <div class="eq-result green">= 2 — net source everywhere</div>
+    </div>
+    <div class="eq-block">
+      <div class="eq-label">curl</div>
+      curl F = (∂Q/∂x − ∂P/∂y) k̂<br>
+      &nbsp;= (0 − 0) k̂
+      <div class="eq-result red">= 0 — no rotation</div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════ SCENE 3 ══════════════════════ -->
+<div class="scene" id="s3">
+  <div class="scene-top">
+    <div class="canvas-col">
+      <div class="canvas-wrap" id="w3">
+        <canvas id="c3" width="580" height="360"></canvas>
+        <div class="scene-label" id="lbl3"></div>
+      </div>
+      <div class="canvas-hint">click to place paddle wheel · use sliders to tune curl and divergence independently</div>
+      <div class="controls-row">
+        <button class="btn" id="pb3" onclick="togglePlay(3)">pause</button>
+        <div class="ctrl-group">curl α <input type="range" min="0" max="20" value="10" id="alp" oninput="setAlpha(+this.value)"><span class="ctrl-val" id="av">1.0</span></div>
+        <div class="ctrl-group">div β <input type="range" min="0" max="20" value="10" id="bet" oninput="setBeta(+this.value)"><span class="ctrl-val" id="bv">1.0</span></div>
+        <button class="btn" onclick="clearWheels(3)">clear wheels</button>
+      </div>
+    </div>
+    <div class="predict-col">
+      <div class="pred-card">
+        <div class="pred-label">explore</div>
+        <div class="pred-q">Set α to max, β to zero. Then reverse. Then find settings where curl = div. What does the field look like in each case? Can you make a field that expands but doesn't rotate?</div>
+        <textarea class="pred-input" placeholder="describe what you observe..."></textarea>
+        <button class="reveal-btn" onclick="revealPred(3)">show explanation →</button>
+        <div class="reveal-ans" id="pa3"><strong>α only (β=0):</strong> pure rotation — the field swirls without expanding. Paddle wheels spin; no flux crosses any box.<br><br><strong>β only (α=0):</strong> pure expansion — arrows radiate outward, no rotation. Paddle wheels don't spin; boxes show positive flux.<br><br><strong>Both:</strong> spiraling outward — like a growing vortex.<br><br>This is the Helmholtz decomposition: any smooth vector field splits into an irrotational part (curl=0, comes from a gradient ∇φ) and a solenoidal part (div=0, comes from a curl ∇×A). Curl and divergence measure these two independent geometric properties.</div>
+      </div>
+    </div>
+  </div>
+  <div class="scene-bottom">
+    <div class="eq-block">
+      <div class="eq-label">field</div>
+      F = (βx − αy, αx + βy, 0)
+    </div>
+    <div class="eq-block">
+      <div class="eq-label">curl (live)</div>
+      curl F = (∂(αx+βy)/∂x − ∂(βx−αy)/∂y) k̂<br>
+      &nbsp;= (α − (−α)) k̂ = 2α k̂
+      <div class="eq-result red" id="curlLive">= 2.0 k̂</div>
+    </div>
+    <div class="eq-block">
+      <div class="eq-label">divergence (live)</div>
+      div F = ∂(βx−αy)/∂x + ∂(αx+βy)/∂y<br>
+      &nbsp;= β + β = 2β
+      <div class="eq-result green" id="divLive">= 2.0</div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════ SCENE 4 ══════════════════════ -->
+<div class="scene" id="s4">
+  <div class="scene-top">
+    <div class="canvas-col">
+      <div class="canvas-wrap" id="w4">
+        <canvas id="c4" width="580" height="360"></canvas>
+        <div class="scene-label" id="lbl4"></div>
+      </div>
+      <div class="canvas-hint">click to place paddle wheel — try near the center, then far away</div>
+      <div class="controls-row">
+        <button class="btn" id="pb4" onclick="togglePlay(4)">pause</button>
+        <div class="ctrl-group">speed <input type="range" min="1" max="10" value="5" id="sp4" oninput="setSpd(4,+this.value)"><span class="ctrl-val" id="sv4">5</span></div>
+        <button class="btn" onclick="clearWheels(4)">clear wheels</button>
+      </div>
+    </div>
+    <div class="predict-col">
+      <div class="pred-card">
+        <div class="pred-label">predict first</div>
+        <div class="pred-q">This field looks exactly like the whirlpool — arrows circling the center. But it's a different field: F = (−y, x) / (x² + y²). Before placing any wheels: will they spin? Will a wheel near the edge spin faster, slower, or the same as one near the center?</div>
+        <textarea class="pred-input" placeholder="predict spin rate near center vs edge..."></textarea>
+        <button class="reveal-btn" onclick="revealPred(4)">reveal answer →</button>
+        <div class="reveal-ans" id="pa4">Wheels near the center spin <strong>fast</strong>. Wheels far from the center barely spin at all — approaching zero. The curl ≈ 0 almost everywhere (except right at the origin, which is a singularity). This field <em>looks</em> like the whirlpool but has almost no local rotation. The difference: Scene 01 was rigid-body rotation (like a spinning disk — every part rotates at the same rate). This is a <strong>free vortex</strong> — like water far from a drain. The fluid moves in circles but doesn't spin locally. Curl captures that distinction exactly.</div>
+      </div>
+    </div>
+  </div>
+  <div class="scene-bottom">
+    <div class="eq-block">
+      <div class="eq-label">field</div>
+      F = (−y, x) / (x²+y²)<br>
+      = (−y/(r²), x/(r²), 0)<br>
+      where r² = x²+y²
+    </div>
+    <div class="eq-block">
+      <div class="eq-label">curl (away from origin)</div>
+      curl F = ∂(x/r²)/∂x − ∂(−y/r²)/∂y<br>
+      &nbsp;= (r²−2x²)/r⁴ + (r²−2y²)/r⁴<br>
+      &nbsp;= (2r²−2r²)/r⁴
+      <div class="eq-result red">= 0 everywhere (except origin)</div>
+    </div>
+    <div class="eq-block">
+      <div class="eq-label">the catch — Stokes' theorem</div>
+      ∮ F·dr around origin = 2π ≠ 0<br>
+      even though curl F = 0!<br><br>
+      The origin is a singularity. Stokes'<br>
+      theorem requires a simply-connected<br>domain — this field violates that.
+      <div class="eq-result blue">curl ≠ circulation (at singularities)</div>
+    </div>
+  </div>
+</div>
+
+<script>
+const W=580,H=360,CX=W/2,CY=H/2;
+let playing=[true,true,true,true,true];
+let speeds=[5,5,5,5,5];
+let lastT=null;
+let curScene=0;
+let sinkMode=false;
+let alpha=1.0,beta=1.0;
+let wheels=[[],[],[],[],[]];
+let boxStart=null,boxEnd=null,boxDragging=false;
+
+const cvs=[0,1,2,3,4].map(i=>document.getElementById('c'+i));
+const ctxs=cvs.map(c=>c.getContext('2d'));
+
+function goScene(i){
+  document.querySelectorAll('.scene').forEach((s,j)=>s.classList.toggle('active',j===i));
+  document.querySelectorAll('.snav-btn').forEach((b,j)=>b.classList.toggle('active',j===i));
+  curScene=i;
+  document.getElementById('pFill').style.width=((i+1)/5*100)+'%';
+}
+function togglePlay(i){playing[i]=!playing[i];document.getElementById('pb'+i).textContent=playing[i]?'pause':'play';}
+function setSpd(i,v){speeds[i]=v;document.getElementById('sv'+i).textContent=v;}
+function setAlpha(v){alpha=v/10;document.getElementById('av').textContent=alpha.toFixed(1);document.getElementById('curlLive').textContent='= '+(2*alpha).toFixed(1)+' k̂';}
+function setBeta(v){beta=v/10;document.getElementById('bv').textContent=beta.toFixed(1);document.getElementById('divLive').textContent='= '+(2*beta).toFixed(1);}
+function toggleSink(){sinkMode=!sinkMode;document.getElementById('sinkBtn').textContent=sinkMode?'switch to source →':'switch to sink →';}
+function clearWheels(i){wheels[i]=[];}
+function revealPred(i){document.getElementById('pa'+i).classList.add('show');}
+
+// ── canvas coords → world coords ───────────────────────────
+// world: x,y in [-1,1], y up
+function toWorld(px,py){return{x:(px-CX)/CX, y:-(py-CY)/CY};}
+
+// ── numerical curl at a canvas point for a given field ──────
+// Uses finite difference: curl_z = (∂Fy/∂x − ∂Fx/∂y)
+// We sample in world coords with a small epsilon
+function localCurl(px,py,Fx,Fy){
+  const h=0.02; // world-space epsilon
+  const {x,y}=toWorld(px,py);
+  // ∂Fy/∂x
+  const dFydx=(Fy(x+h,y)-Fy(x-h,y))/(2*h);
+  // ∂Fx/∂y
+  const dFxdy=(Fx(x,y+h)-Fx(x,y-h))/(2*h);
+  return dFydx-dFxdy;
+}
+
+// ── numerical divergence at a canvas point ──────────────────
+function localDiv(px,py,Fx,Fy){
+  const h=0.02;
+  const {x,y}=toWorld(px,py);
+  const dFxdx=(Fx(x+h,y)-Fx(x-h,y))/(2*h);
+  const dFydy=(Fy(x,y+h)-Fy(x,y-h))/(2*h);
+  return dFxdx+dFydy;
+}
+
+// ── click to add wheels ─────────────────────────────────────
+[0,1,3,4].forEach(i=>{
+  cvs[i].addEventListener('click',e=>{
+    const r=cvs[i].getBoundingClientRect();
+    wheels[i].push({x:e.clientX-r.left, y:e.clientY-r.top, angle:0});
+  });
+});
+
+// ── box drag (scene 2) ──────────────────────────────────────
+cvs[2].addEventListener('mousedown',e=>{const r=cvs[2].getBoundingClientRect();boxStart={x:e.clientX-r.left,y:e.clientY-r.top};boxEnd=null;boxDragging=true;});
+cvs[2].addEventListener('mousemove',e=>{if(!boxDragging)return;const r=cvs[2].getBoundingClientRect();boxEnd={x:e.clientX-r.left,y:e.clientY-r.top};});
+cvs[2].addEventListener('mouseup',()=>{boxDragging=false;if(boxStart&&boxEnd)computeFlux();});
+cvs[2].addEventListener('touchstart',e=>{e.preventDefault();const r=cvs[2].getBoundingClientRect(),t=e.touches[0];boxStart={x:t.clientX-r.left,y:t.clientY-r.top};boxEnd=null;boxDragging=true;},{passive:false});
+cvs[2].addEventListener('touchmove',e=>{e.preventDefault();if(!boxDragging)return;const r=cvs[2].getBoundingClientRect(),t=e.touches[0];boxEnd={x:t.clientX-r.left,y:t.clientY-r.top};},{passive:false});
+cvs[2].addEventListener('touchend',()=>{boxDragging=false;if(boxStart&&boxEnd)computeFlux();});
+
+function clearBox(){
+  boxStart=null;boxEnd=null;
+  const el=document.getElementById('fn2');
+  el.textContent='draw a box';el.className='flux-num';
+  document.getElementById('fs2').textContent='click and drag on the canvas';
+}
+
+// ── flux: show BOTH raw total and per-area so students discover the ratio ──
+function computeFlux(){
+  if(!boxStart||!boxEnd)return;
+  const x0=Math.min(boxStart.x,boxEnd.x),x1=Math.max(boxStart.x,boxEnd.x);
+  const y0=Math.min(boxStart.y,boxEnd.y),y1=Math.max(boxStart.y,boxEnd.y);
+  if(x1-x0<10||y1-y0<10)return;
+  const sg=sinkMode?-1:1;
+  // Integrate F·n around the boundary using canvas pixel coords → world coords
+  // F = sg*(x,y) in world space; canvas y is flipped
+  const N=60;
+  let flux=0;
+  // Right edge: outward normal = +x̂, F·n = sg*wx, integrate over canvas height segment
+  for(let k=0;k<N;k++){
+    const py=y0+(y1-y0)*(k+.5)/N;
+    const {x:wx}=toWorld(x1,py);
+    const ds=(y1-y0)/N; // canvas pixels
+    flux+=sg*wx*ds;
+  }
+  // Left edge: outward normal = -x̂, F·n = -sg*wx
+  for(let k=0;k<N;k++){
+    const py=y0+(y1-y0)*(k+.5)/N;
+    const {x:wx}=toWorld(x0,py);
+    const ds=(y1-y0)/N;
+    flux+=sg*(-wx)*ds;
+  }
+  // Bottom edge (large py = bottom on canvas): outward normal = -ŷ (canvas y flipped),
+  // world outward is -(−ŷ_world) wait — bottom of box in canvas = larger py = smaller wy
+  // outward world normal at canvas-bottom edge = -ŷ_world; F·n = -sg*wy
+  for(let k=0;k<N;k++){
+    const px=x0+(x1-x0)*(k+.5)/N;
+    const {y:wy}=toWorld(px,y1); // y1 is bottom in canvas = smaller wy (negative)
+    const ds=(x1-x0)/N;
+    flux+=sg*(-wy)*ds; // outward normal is -ŷ_world at bottom
+  }
+  // Top edge (small py = top on canvas): outward normal = +ŷ_world; F·n = sg*wy
+  for(let k=0;k<N;k++){
+    const px=x0+(x1-x0)*(k+.5)/N;
+    const {y:wy}=toWorld(px,y0);
+    const ds=(x1-x0)/N;
+    flux+=sg*wy*ds;
+  }
+  // Scale: world units. 1 canvas pixel = 1/CX world units in x, 1/CY in y
+  // flux has units of [world_velocity * canvas_pixels]. Normalise to world:
+  const fluxWorld=flux/CX; // rough scale to world units
+  const boxWW=(x1-x0)/CX, boxWH=(y1-y0)/CY;
+  const areaWorld=boxWW*boxWH;
+  const perArea=fluxWorld/areaWorld;
+
+  const el=document.getElementById('fn2');
+  // Show raw total AND per-area so students see both change, then notice the ratio is constant
+  el.textContent=(fluxWorld>=0?'+':'')+fluxWorld.toFixed(2)+' total';
+  el.className='flux-num '+(fluxWorld>0.01?'pos':fluxWorld<-0.01?'neg':'zero');
+  document.getElementById('fs2').textContent=
+    'per unit area: '+(perArea>=0?'+':'')+perArea.toFixed(2)+'  |  box area: '+areaWorld.toFixed(2);
+}
+
+// ── helpers ─────────────────────────────────────────────────
+function arw(ctx,x1,y1,x2,y2,col,w){
+  const dx=x2-x1,dy=y2-y1,len=Math.hypot(dx,dy);if(len<3)return;
+  ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.strokeStyle=col;ctx.lineWidth=w||1.2;ctx.stroke();
+  const a=Math.atan2(dy,dx),hs=Math.min(7,len*.35);
+  ctx.beginPath();ctx.moveTo(x2,y2);ctx.lineTo(x2-hs*Math.cos(a-.42),y2-hs*Math.sin(a-.42));ctx.lineTo(x2-hs*Math.cos(a+.42),y2-hs*Math.sin(a+.42));ctx.closePath();ctx.fillStyle=col;ctx.fill();
+}
+function grid(ctx,Fx,Fy,col,nx,ny,sc){
+  nx=nx||12;ny=ny||10;sc=sc||28;
+  for(let i=0;i<=nx;i++)for(let j=0;j<=ny;j++){
+    const px=(i/nx)*W,py=(j/ny)*H;
+    const {x:wx,y:wy}=toWorld(px,py);
+    const fx=Fx(wx,wy),fy=Fy(wx,wy);
+    const mag=Math.hypot(fx,fy)||.001,nm=Math.min(mag,1.8),len=nm*sc,al=.25+.6*(nm/1.8);
+    ctx.globalAlpha=al;
+    arw(ctx,px-fx/mag*len*.45,py+fy/mag*len*.45,px+fx/mag*len*.55,py-fy/mag*len*.55,col,1.1);
+    ctx.globalAlpha=1;
+  }
+}
+
+// Draw paddle wheel. spinRate is the LOCAL curl value at this wheel's position.
+// The wheel angle advances by spinRate each frame (scaled by dt and global speed).
+function paddle(ctx,x,y,ang,col,r){
+  r=r||22;ctx.save();ctx.translate(x,y);
+  for(let i=0;i<4;i++){
+    ctx.save();ctx.rotate(ang+i*Math.PI/2);
+    ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(0,-r);ctx.strokeStyle=col;ctx.lineWidth=2;ctx.stroke();
+    ctx.beginPath();ctx.arc(0,-r,4,0,Math.PI*2);ctx.fillStyle=col;ctx.fill();
+    ctx.restore();
+  }
+  ctx.beginPath();ctx.arc(0,0,5,0,Math.PI*2);ctx.fillStyle=col;ctx.fill();
+  ctx.restore();
+}
+
+function wheelLabel(ctx,w,curlVal,col){
+  ctx.font='9px JetBrains Mono,monospace';ctx.fillStyle=col;
+  const sign=curlVal>=0?'+':'' ;
+  ctx.fillText(`curl≈${sign}${curlVal.toFixed(2)}`,w.x+16,w.y-16);
+}
+
+class Pts{
+  constructor(n){this.n=n;this.x=new Float32Array(n);this.y=new Float32Array(n);this.age=new Float32Array(n);this.life=new Float32Array(n);for(let i=0;i<n;i++)this.reset(i);}
+  reset(i){this.x[i]=Math.random()*W;this.y[i]=Math.random()*H;this.age[i]=Math.random()*90;this.life[i]=60+Math.random()*80;}
+  update(dt,Fx,Fy,sp){
+    const s=dt*sp*.013;
+    for(let i=0;i<this.n;i++){
+      const {x:wx,y:wy}=toWorld(this.x[i],this.y[i]);
+      const fx=Fx(wx,wy),fy=Fy(wx,wy);
+      this.x[i]+=fx*s*28;this.y[i]-=fy*s*28;this.age[i]+=dt;
+      if(this.age[i]>this.life[i]||this.x[i]<-5||this.x[i]>W+5||this.y[i]<-5||this.y[i]>H+5)this.reset(i);
+    }
+  }
+  draw(ctx,col){for(let i=0;i<this.n;i++){const f=Math.min(1,Math.min(this.age[i]/12,(this.life[i]-this.age[i])/12));ctx.beginPath();ctx.arc(this.x[i],this.y[i],2.2,0,Math.PI*2);ctx.fillStyle=col;ctx.globalAlpha=f*.6;ctx.fill();}ctx.globalAlpha=1;}
+}
+const pts=[new Pts(90),new Pts(90),new Pts(90),new Pts(90),new Pts(90)];
+
+// ── draw functions ───────────────────────────────────────────
+function bg(ctx){ctx.fillStyle='#f7f4ef';ctx.fillRect(0,0,W,H);ctx.strokeStyle='#e4dfd4';ctx.lineWidth=.5;for(let x=0;x<W;x+=58){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke();}for(let y=0;y<H;y+=40){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();}}
+function lbl(id,lines){const el=document.getElementById(id);el.innerHTML=lines.map(l=>`<div>${l}</div>`).join('');}
+
+// SCENE 0: whirlpool F=(−y,x). curl=+2 everywhere (uniform), div=0.
+function d0(dt){
+  const ctx=ctxs[0];bg(ctx);
+  const Fx=(x,y)=>-y, Fy=(x,y)=>x;
+  grid(ctx,Fx,Fy,'#7a6a56',13,10,28);
+  pts[0].update(playing[0]?dt:0,Fx,Fy,speeds[0]);pts[0].draw(ctx,'#9a8a72');
+  wheels[0].forEach(w=>{
+    const c=localCurl(w.x,w.y,Fx,Fy);
+    if(playing[0]) w.angle+=dt*0.0018*speeds[0]*c;
+    paddle(ctx,w.x,w.y,w.angle,'#c0392b');
+    wheelLabel(ctx,w,c,'#c0392b');
+  });
+  lbl('lbl0',['F = (−y, x)','curl F = 2k̂','div F = 0']);
+}
+
+// SCENE 1: river F=(y,0). curl=−1 everywhere (uniform), div=0.
+function d1(dt){
+  const ctx=ctxs[1];bg(ctx);
+  for(let y=0;y<H;y++){const t=1-y/H;ctx.fillStyle=`rgba(30,102,65,${t*.07})`;ctx.fillRect(0,y,W,1);}
+  const Fx=(x,y)=>y, Fy=()=>0;
+  grid(ctx,Fx,Fy,'#3a5c4f',13,10,30);
+  pts[1].update(playing[1]?dt:0,Fx,Fy,speeds[1]);pts[1].draw(ctx,'#4a7c60');
+  wheels[1].forEach(w=>{
+    const c=localCurl(w.x,w.y,Fx,Fy);
+    if(playing[1]) w.angle+=dt*0.0018*speeds[1]*c;
+    paddle(ctx,w.x,w.y,w.angle,'#1e6641');
+    wheelLabel(ctx,w,c,'#1e6641');
+  });
+  ctx.fillStyle='rgba(30,102,65,0.18)';ctx.fillRect(0,0,5,H);
+  ctx.font='9px JetBrains Mono,monospace';ctx.fillStyle='#4a7c60';
+  ctx.fillText('fast →',8,14);ctx.fillText('slow →',8,H-6);
+  lbl('lbl1',['F = (y, 0)','curl F = −k̂','div F = 0']);
+}
+
+// SCENE 2: source/sink F=(±x,±y). div=±2, curl=0.
+function d2(dt){
+  const ctx=ctxs[2];bg(ctx);
+  const sg=sinkMode?-1:1;
+  const Fx=(x,y)=>sg*x, Fy=(x,y)=>sg*y;
+  grid(ctx,Fx,Fy,sinkMode?'#8a3020':'#1a5276',13,10,28);
+  pts[2].update(playing[2]?dt:0,Fx,Fy,speeds[2]);pts[2].draw(ctx,sinkMode?'#a04030':'#2a6090');
+  ctx.beginPath();ctx.arc(CX,CY,7,0,Math.PI*2);ctx.fillStyle=sinkMode?'#c0392b':'#1a5276';ctx.fill();
+  if(boxStart&&boxEnd){
+    const x0=Math.min(boxStart.x,boxEnd.x),x1=Math.max(boxStart.x,boxEnd.x);
+    const y0=Math.min(boxStart.y,boxEnd.y),y1=Math.max(boxStart.y,boxEnd.y);
+    ctx.strokeStyle=sinkMode?'#c0392b':'#1a5276';ctx.lineWidth=1.5;ctx.setLineDash([5,3]);
+    ctx.strokeRect(x0,y0,x1-x0,y1-y0);ctx.setLineDash([]);
+    ctx.fillStyle=(sinkMode?'#c0392b':'#1a5276')+'18';ctx.fillRect(x0,y0,x1-x0,y1-y0);
+  }
+  lbl('lbl2',[sinkMode?'F = (−x, −y)':'F = (x, y)','div F = '+(sinkMode?'−2':'2'),'curl F = 0']);
+}
+
+// SCENE 3: combined F=(βx−αy, αx+βy).
+function d3(dt){
+  const ctx=ctxs[3];bg(ctx);
+  const Fx=(x,y)=>beta*x-alpha*y, Fy=(x,y)=>alpha*x+beta*y;
+  grid(ctx,Fx,Fy,'#5c3a4f',13,10,26);
+  pts[3].update(playing[3]?dt:0,Fx,Fy,speeds[3]||5);pts[3].draw(ctx,'#7c4a6a');
+  wheels[3].forEach(w=>{
+    const c=localCurl(w.x,w.y,Fx,Fy);
+    if(playing[3]) w.angle+=dt*0.0018*(speeds[3]||5)*c;
+    paddle(ctx,w.x,w.y,w.angle,'#8e44ad');
+    wheelLabel(ctx,w,c,'#8e44ad');
+  });
+  lbl('lbl3',['F = (βx−αy, αx+βy)',`curl F = ${(2*alpha).toFixed(1)}k̂`,`div F = ${(2*beta).toFixed(1)}`]);
+}
+
+// SCENE 4: free vortex F=(−y,x)/(x²+y²). curl≈0 everywhere except origin singularity.
+// Wheels near center spin fast (field magnitude huge), far = barely spin.
+// Local curl computation returns ≈0 away from origin — this IS the key demo.
+function d4(dt){
+  const ctx=ctxs[4];bg(ctx);
+  const EPS=0.04; // avoid singularity at origin
+  const Fx=(x,y)=>{ const r2=x*x+y*y+EPS; return -y/r2; };
+  const Fy=(x,y)=>{ const r2=x*x+y*y+EPS; return  x/r2; };
+  // Draw grid with capped magnitude so arrows near center don't blow up
+  grid(ctx,Fx,Fy,'#1a3a5c',13,10,28);
+  pts[4].update(playing[4]?dt:0,Fx,Fy,speeds[4]);pts[4].draw(ctx,'#2a5080');
+  // Draw red zone around singularity
+  ctx.beginPath();ctx.arc(CX,CY,12,0,Math.PI*2);
+  ctx.strokeStyle='#c0392b';ctx.lineWidth=1.5;ctx.setLineDash([3,2]);ctx.stroke();ctx.setLineDash([]);
+  ctx.font='9px JetBrains Mono,monospace';ctx.fillStyle='#c0392b';ctx.fillText('singularity',CX+14,CY+4);
+  wheels[4].forEach(w=>{
+    // Clamp position away from singularity for curl calc
+    const dx=w.x-CX, dy=w.y-CY;
+    const dist=Math.hypot(dx,dy);
+    const c = dist < 15 ? 0 : localCurl(w.x,w.y,Fx,Fy);
+    // Spin rate: use field magnitude at position (wheel is carried by fluid),
+    // but actual LOCAL curl is ≈0 — wheel spins ONLY due to curl, not translation.
+    // Scale spin by curl*speed for honesty: near origin curl→large due to EPS regularisation,
+    // far from origin curl→0.
+    if(playing[4]) w.angle+=dt*0.0018*speeds[4]*c*3;
+    const col = Math.abs(c) < 0.15 ? '#888888' : '#c0392b';
+    paddle(ctx,w.x,w.y,w.angle,col);
+    ctx.font='9px JetBrains Mono,monospace';ctx.fillStyle=col;
+    const sign=c>=0?'+':'';
+    ctx.fillText(`curl≈${sign}${c.toFixed(2)}`,w.x+16,w.y-16);
+    if(Math.abs(c)<0.15){
+      ctx.fillStyle='#555';
+      ctx.fillText('(≈ not spinning)',w.x+16,w.y-6);
+    }
+  });
+  lbl('lbl4',['F = (−y, x) / (x²+y²)','curl F ≈ 0 (away from origin)','div F = 0']);
+}
+
+const drawFns=[d0,d1,d2,d3,d4];
+
+function loop(ts){
+  if(!lastT)lastT=ts;
+  const dt=Math.min(ts-lastT,50);lastT=ts;
+  drawFns.forEach((fn,i)=>fn(dt));
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
